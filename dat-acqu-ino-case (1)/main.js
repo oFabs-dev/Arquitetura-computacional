@@ -15,6 +15,19 @@ const HABILITAR_OPERACAO_INSERIR = true;
 // false: lê os dados reais do Arduino pela porta serial
 const HABILITAR_SENSORES_SIMULADOS = true;
 
+const ACRESCIMO_SALA_2 = 10;
+const ACRESCIMO_SALA_3 = 20;
+
+const classificarTemperatura = (temperatura) => {
+    if (temperatura >= 18 && temperatura <= 27) {
+        return 'ideal';
+    }
+    if (temperatura >= 15 && temperatura <= 32) {
+        return 'atencao';
+    }
+    return 'risco';
+};
+
 // função para comunicação serial
 const serial = async (
     valoresLm35,
@@ -36,24 +49,41 @@ const serial = async (
     const tratarLinha = async (data) => {
         console.log(data);
         const valores = data.split(';');
-        const tcrt5000 = parseInt(valores[1]);
-        const lm35 = parseFloat(valores[0]);
+        const tcrt5000 = parseInt(valores[0]);
+        const lm35 = parseFloat(valores[1]);
 
         // armazena os valores dos sensores nos arrays correspondentes
         valoresLm35.push(lm35);
         valoresTcrt5000.push(tcrt5000);
 
+
+        const salas = [
+    { fkSala: 1, temperatura: lm35 },
+    { fkSala: 2, temperatura: lm35 + ACRESCIMO_SALA_2 },
+    { fkSala: 3, temperatura: lm35 + ACRESCIMO_SALA_3 },
+];
+
         // insere os dados no banco de dados (se habilitado)
-        if (HABILITAR_OPERACAO_INSERIR) {
+  for (const sala of salas) {
+    const temperatura = Number(sala.temperatura.toFixed(2));
 
-             await poolBancoDados.execute(
-                'INSERT INTO sensor (lm35_temperatura, chave) VALUES (?,?);',
-                   [tcrt5000, lm35]
+    console.log(`Sala ${sala.fkSala} | ${temperatura.toFixed(2)} °C | ${classificarTemperatura(temperatura)}`);
+
+    if (HABILITAR_OPERACAO_INSERIR) {
+        try {
+            await poolBancoDados.execute(
+                'INSERT INTO medida (lm35_temperatura, chave, fkSala) VALUES (?, ?, ?);',
+                [temperatura, tcrt5000, sala.fkSala]
             );
-            console.log("valores inseridos no banco: ", tcrt5000, lm35);
-
+        } catch (erro) {
+            console.error(`Erro ao inserir a sala ${sala.fkSala}: ${erro.message}`);
         }
-    };
+    }
+}
+    }
+    
+
+
 
     // modo simulado: gera uma linha por segundo, no mesmo formato que o Arduino envia
     if (HABILITAR_SENSORES_SIMULADOS) {
@@ -116,10 +146,10 @@ const servidor = (
 
     // define os endpoints da API para cada tipo de sensor
     app.get('/sensores/tcrt5000', (_, response) => {
-        return response.json(valoresLm35);
+        return response.json(valoresTcrt5000);
     });
     app.get('/sensores/lm35', (_, response) => {
-        return response.json(valoresTcrt5000);
+        return response.json(valoresLm35);
     });
 }
 
@@ -141,3 +171,4 @@ const servidor = (
         valoresTcrt5000
     );
 })();
+
